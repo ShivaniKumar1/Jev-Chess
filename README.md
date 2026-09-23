@@ -2,6 +2,10 @@
 
 A demo that has TypeSafe AI's Jev model (via DigitalOcean's `/v1/systemone` endpoint) play chess against itself - one decision per move, not per candidate line.
 
+
+https://github.com/user-attachments/assets/81722c87-dfad-46b1-8fdb-192564354413
+
+
 Jev isn't a generative/chat model - it answers typed questions (`noul` / `choice` / `score`) about a `state` you hand it. So instead of asking it to search chess positions itself, this script does the engine legwork: for the side to move, it enumerates every legal move (never more than 218, comfortably under the `choice` type's 255-option cap), computes simple heuristics for each (material change, captures, checks/mate, opponent mobility), and asks Jev a single `choice` question to pick the best one - plus a `score` (position assessment) and `noul` (tactical sharpness) question in the same call, for narration. One API call per move.
 
 ## Setup
