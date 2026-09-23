@@ -8,6 +8,12 @@ https://github.com/user-attachments/assets/81722c87-dfad-46b1-8fdb-192564354413
 
 Jev isn't a generative/chat model - it answers typed questions (`noul` / `choice` / `score`) about a `state` you hand it. So instead of asking it to search chess positions itself, this script does the engine legwork: for the side to move, it enumerates every legal move (never more than 218, comfortably under the `choice` type's 255-option cap), computes simple heuristics for each (material change, captures, checks/mate, opponent mobility), and asks Jev a single `choice` question to pick the best one - plus a `score` (position assessment) and `noul` (tactical sharpness) question in the same call, for narration. One API call per move.
 
+### Is Jev doing anything beyond sorting by the obvious number?
+
+Since Jev only sees the same heuristics described in plain language, it's fair to ask whether it's adding anything beyond a naive weighted sum of those exact features. To check, every non-forced move also computes a **naive greedy baseline** locally (no API call): argmax over the same features (material swing, check/mate, opponent mobility) using simple fixed weights. We then compare Jev's actual pick against that baseline pick and track the **divergence rate** - how often Jev chooses something the greedy heuristic wouldn't.
+
+This is surfaced live in the UI (`vs. Baseline` card and the `Last move` card's subtext), printed per move in the terminal, and summarized at the end of each run. It's not a claim that divergence = better play (you'd need Stockfish or a labeled tactics set for that) - it's the cheapest possible signal for "is this doing anything beyond sorting by the obvious number."
+
 ## Setup
 
 ```bash
@@ -38,6 +44,7 @@ When the script starts, it launches a local browser UI automatically. The UI sho
 - `Material`: Piece-value balance (`White - Black`) using pawn=1, knight=3, bishop=3, rook=5, queen=9. Positive means White is ahead; negative means Black is ahead.
 - `Latency`: Round-trip time for the most recent Jev API request.
 - `Sharpness`: Jev's estimate (0-100%) of how tactical/volatile the position is (how much one move could swing the game).
+- `vs. Baseline`: Percentage of decisions (so far, this run) where Jev's pick differs from a naive greedy baseline computed locally from the same features. `0%` means Jev has only picked what the obvious heuristic would pick; higher means it's diverging more often. See "Is Jev doing anything beyond sorting by the obvious number?" above.
 
 ## Flags
 

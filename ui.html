@@ -159,6 +159,11 @@
             <div class="stat-value" id="sharpBig">—</div>
             <div class="stat-sub">Jev's narration</div>
           </div>
+          <div class="stat-card">
+            <div class="stat-label">vs. Baseline</div>
+            <div class="stat-value" id="baselineBig">—</div>
+            <div class="stat-sub" id="baselineSub">moves that differ from greedy</div>
+          </div>
         </div>
       </div>
 
@@ -279,7 +284,13 @@
           document.getElementById("plySub").textContent = `ply #${s.ply_no ?? 0}`;
           document.getElementById("lastMove").textContent = s.last_move_san || "—";
           document.getElementById("lastMoveSub").textContent = s.last_move_san
-            ? (s.forced ? "forced — no Jev call" : "")
+            ? (s.forced
+                ? "forced — no Jev call"
+                : s.baseline_agreement === "diverge"
+                ? `diverges from baseline (${s.baseline_alt_san || "?"})`
+                : s.baseline_agreement === "agree"
+                ? "matches baseline"
+                : "")
             : "—";
           document.getElementById("candidateCount").textContent = s.candidate_count ?? "—";
 
@@ -301,6 +312,16 @@
           } else {
             sharpEl.textContent = "—";
             sharpEl.style.color = "#efe6da";
+          }
+
+          const baselineEl = document.getElementById("baselineBig");
+          const baselineSubEl = document.getElementById("baselineSub");
+          if (typeof s.baseline_divergence_pct === "number" && s.baseline_total) {
+            baselineEl.textContent = `${s.baseline_divergence_pct.toFixed(0)}%`;
+            baselineSubEl.textContent = `${s.baseline_divergent}/${s.baseline_total} moves differ`;
+          } else {
+            baselineEl.textContent = "—";
+            baselineSubEl.textContent = "moves that differ from greedy";
           }
 
           if (s.result) {

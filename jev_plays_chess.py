@@ -61,8 +61,12 @@ def material_balance(board):
     return total
 
 
-def describe_move(board, move):
-    """Push `move` on a scratch copy of `board` and describe the result."""
+def move_features(board, move):
+    """Push `move` on a scratch copy of `board` and compute the exact same
+    raw features that get described to Jev in plain language. Keeping this
+    as the single source of truth means the naive greedy baseline (below)
+    is judged on identical information to what Jev sees -- no unfair
+    advantage either way."""
     mover_is_white = board.turn == chess.WHITE
     is_capture = board.is_capture(move)
     san = board.san(move)
@@ -77,15 +81,47 @@ def describe_move(board, move):
     balance_for_mover = balance_after if mover_is_white else -balance_after
     reply_count = scratch.legal_moves.count()
 
-    parts = [f"move {san}"]
-    parts.append("a capture" if is_capture else "not a capture")
-    if is_mate:
+    return {
+        "san": san,
+        "is_capture": is_capture,
+        "gives_check": gives_check,
+        "is_mate": is_mate,
+        "material_for_mover": balance_for_mover,
+        "opponent_replies": reply_count,
+    }
+
+
+def describe_features(features):
+    """Plain-language description of `features`, exactly what gets sent to
+    Jev as a candidate move's `criteria` text."""
+    parts = [f"move {features['san']}"]
+    parts.append("a capture" if features["is_capture"] else "not a capture")
+    if features["is_mate"]:
         parts.append("delivers checkmate")
-    elif gives_check:
+    elif features["gives_check"]:
         parts.append("gives check")
-    parts.append(f"material balance after the move: {balance_for_mover:+.0f} pawns for the mover")
-    parts.append(f"opponent has {reply_count} legal replies afterward")
+    parts.append(f"material balance after the move: {features['material_for_mover']:+.0f} pawns for the mover")
+    parts.append(f"opponent has {features['opponent_replies']} legal replies afterward")
     return ", ".join(parts)
+
+
+def greedy_baseline_score(features):
+    """Naive baseline: argmax over the exact same features described to
+    Jev, weighted in line with the instructions we give Jev ("prefer moves
+    that win material, deliver check or mate, and avoid handing the
+    opponent a much stronger reply position").
+
+    This exists to answer one question: is Jev doing anything beyond
+    sorting by the obvious numbers we handed it? See `baseline_divergent`
+    / `baseline_total` in the run state and the README for how the
+    divergence rate is used."""
+    if features["is_mate"]:
+        return 1_000_000.0
+    score = float(features["material_for_mover"])
+    if features["gives_check"]:
+        score += 0.3
+    score -= features["opponent_replies"] * 0.02
+    return score
 
 
 def board_metrics_for_narration(board):
@@ -154,6 +190,11 @@ class WebUI:
             "latency_ms": None,
             "last_call": None,
             "result": None,
+            "baseline_agreement": None,
+            "baseline_alt_san": None,
+            "baseline_divergent": 0,
+            "baseline_total": 0,
+            "baseline_divergence_pct": None,
             "running": False,
         }
 
@@ -267,7 +308,7 @@ def call_jev(base_url, access_key, model, board, candidates, capture=None):
         "Content-Type": "application/json",
     }
 
-    criteria = {move_id: desc for move_id, desc, _ in candidates}
+    criteria = {move_id: desc for move_id, desc, _, _ in candidates}
     balance_for_mover = board_metrics_for_narration(board)
 
     body = {
@@ -349,6 +390,8 @@ def main():
             return state["running"] and run_id == state["run_id"]
 
     def play_loop(run_id):
+        baseline_divergent = 0
+        baseline_total = 0
         try:
             access_key = os.environ.get("MODEL_ACCESS_KEY")
             board = chess.Board()
@@ -376,11 +419,21 @@ def main():
                     latency_ms = None
                     sharp_noul = None
                     candidate_count = 1
+                    baseline_agreement = None
+                    baseline_alt_san = None
                     last_call_update = {}
                 else:
                     forced = False
-                    candidates = [(move.uci(), describe_move(board, move), move) for move in legal_moves]
+                    candidates = []
+                    for move in legal_moves:
+                        features = move_features(board, move)
+                        candidates.append((move.uci(), describe_features(features), move, features))
                     candidate_count = len(candidates)
+
+                    # Naive greedy baseline: argmax over the exact same features
+                    # handed to Jev. This is the cheapest way to check whether
+                    # Jev is doing anything beyond sorting by the obvious number.
+                    greedy_id, _, _, greedy_features = max(candidates, key=lambda c: greedy_baseline_score(c[3]))
 
                     ui.update(
                         status=f"Calling Jev for ply #{ply_no} ({side_label} to move, {candidate_count} legal moves)...",
@@ -412,17 +465,31 @@ def main():
                     answers = result.get("answers", {})
                     chosen_id = answers.get("best_move", {}).get("choice")
                     chosen_move = None
-                    for move_id, _, move in candidates:
+                    for move_id, _, move, _ in candidates:
                         if move_id == chosen_id:
                             chosen_move = move
                             break
-                    if chosen_move is None:
+
+                    # Only compare to the baseline when Jev actually returned a
+                    # valid candidate -- not when we're about to fall back.
+                    if chosen_move is not None:
+                        baseline_total += 1
+                        if chosen_id == greedy_id:
+                            baseline_agreement = "agree"
+                            baseline_alt_san = None
+                        else:
+                            baseline_agreement = "diverge"
+                            baseline_alt_san = greedy_features["san"]
+                            baseline_divergent += 1
+                    else:
                         # Fall back defensively: prefer captures, then any legal move.
                         chosen_move = legal_moves[0]
                         for move in legal_moves:
                             if board.is_capture(move):
                                 chosen_move = move
                                 break
+                        baseline_agreement = None
+                        baseline_alt_san = None
 
                     sharp = answers.get("is_sharp", {}) or {}
                     sharp_noul = sharp.get("noul")
@@ -439,6 +506,10 @@ def main():
                 board.push(chosen_move)
                 node = node.add_variation(chosen_move)
 
+                baseline_divergence_pct = (
+                    (baseline_divergent / baseline_total * 100) if baseline_total else None
+                )
+
                 ui.update(
                     status=f"Jev played {san} ({side_label})" + ("  -- forced move" if forced else ""),
                     grid=board_grid(board, chosen_move),
@@ -450,11 +521,23 @@ def main():
                     sharp_noul=sharp_noul,
                     candidate_count=candidate_count,
                     latency_ms=latency_ms,
+                    baseline_agreement=baseline_agreement,
+                    baseline_alt_san=baseline_alt_san,
+                    baseline_divergent=baseline_divergent,
+                    baseline_total=baseline_total,
+                    baseline_divergence_pct=baseline_divergence_pct,
                     **last_call_update,
+                )
+                baseline_note = (
+                    " [forced]" if forced
+                    else f" [baseline diverges, would play {baseline_alt_san}]" if baseline_agreement == "diverge"
+                    else " [matches baseline]" if baseline_agreement == "agree"
+                    else ""
                 )
                 print(
                     f"ply #{ply_no} ({side_label}): played {san}"
                     + (f", {latency_ms:.0f} ms" if latency_ms is not None else " (forced, no Jev call)")
+                    + baseline_note
                 )
 
                 reason = result_reason(board)
@@ -479,6 +562,14 @@ def main():
                 print(f"PGN written to {args.pgn}")
         except Exception as e:
             finish_run(f"Runtime error: {type(e).__name__}: {e}")
+        finally:
+            if baseline_total:
+                rate = baseline_divergent / baseline_total * 100
+                print(
+                    f"Baseline divergence this run: {baseline_divergent}/{baseline_total} decisions "
+                    f"({rate:.1f}%) -- how often Jev picked something the naive greedy heuristic "
+                    f"(argmax over the same features) wouldn't have."
+                )
 
     def start_game():
         access_key = os.environ.get("MODEL_ACCESS_KEY")
@@ -504,6 +595,11 @@ def main():
             latency_ms=None,
             last_call=None,
             result=None,
+            baseline_agreement=None,
+            baseline_alt_san=None,
+            baseline_divergent=0,
+            baseline_total=0,
+            baseline_divergence_pct=None,
             running=True,
         )
         thread = threading.Thread(target=play_loop, args=(run_id,), daemon=True)
