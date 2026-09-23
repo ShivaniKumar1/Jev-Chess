@@ -1,0 +1,338 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Jev Plays Chess</title>
+    <style>
+      :root {
+        --bg: #120c07;
+        --panel: #1d150d;
+        --panel-border: #3d2c1a;
+        --accent: #d9a544;
+        --accent-2: #c1583a;
+        --text-dim: #b3a08a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #2a1d10, #120c07 70%);
+        color: #f2e8d8;
+        font-family: Georgia, "Iowan Old Style", "Palatino Linotype", serif;
+        display: flex;
+        justify-content: center;
+        padding: 32px 16px;
+      }
+      .app { width: 100%; max-width: 900px; display: flex; flex-direction: column; align-items: center; }
+      header { text-align: center; margin-bottom: 12px; }
+      h1 { font-size: 25px; margin: 0; letter-spacing: 0.5px; color: #f2e8d8; }
+      .sub { font-size: 12px; color: var(--text-dim); margin-top: 3px; font-family: -apple-system, sans-serif; letter-spacing: 0.06em; }
+      #status { margin-bottom: 4px; font-size: 14px; color: var(--accent-2); min-height: 18px; font-family: -apple-system, sans-serif; text-align: center; }
+      .move-stat { margin-bottom: 18px; font-size: 15px; font-weight: 600; color: var(--accent); min-height: 20px; font-family: -apple-system, sans-serif; text-align: center; }
+      #connBanner { display: none; width: 100%; margin-bottom: 14px; padding: 10px 12px; border-radius: 8px; background: #3a1810; border: 1px solid #7a3320; color: #ffcdb0; font-size: 13px; font-family: -apple-system, sans-serif; text-align: center; }
+      #resultBanner { display: none; width: 100%; margin-bottom: 14px; padding: 10px 12px; border-radius: 8px; background: #2b2008; border: 1px solid #6b5220; color: #f0d896; font-size: 13px; font-family: -apple-system, sans-serif; text-align: center; }
+
+      .main-row { display: flex; gap: 18px; align-items: center; }
+
+      .board-frame {
+        background: linear-gradient(160deg, #241a10, #16100a);
+        border: 1px solid var(--panel-border);
+        border-radius: 14px;
+        padding: 16px 18px 10px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.55);
+      }
+      .board-with-ranks { display: flex; }
+      .rank-labels { display: flex; flex-direction: column; }
+      .rank-labels span {
+        height: 50px; width: 18px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 11px; color: var(--text-dim); font-family: -apple-system, sans-serif;
+      }
+      .board {
+        display: grid;
+        grid-template-columns: repeat(8, 50px);
+        grid-template-rows: repeat(8, 50px);
+        gap: 0;
+        border: 3px solid #4a3520;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .file-labels { display: flex; margin-left: 18px; }
+      .file-labels span {
+        width: 50px; text-align: center; padding-top: 5px;
+        font-size: 11px; color: var(--text-dim); font-family: -apple-system, sans-serif;
+      }
+      .cell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 50px;
+        line-height: 1;
+        user-select: none;
+      }
+      .cell.light { background: #e8d6ab; }
+      .cell.dark { background: #7a4a26; }
+      .cell.highlight { box-shadow: inset 0 0 0 4px #35d0e0, 0 0 10px 1px rgba(53,208,224,0.85); }
+      .piece-w { color: #fbf6ea; text-shadow: 0 1px 2px rgba(0,0,0,0.65); }
+      .piece-b { color: #1c1006; text-shadow: 0 1px 1px rgba(255,255,255,0.3); }
+
+      .stats-column { display: flex; flex-direction: column; gap: 12px; width: 168px; font-family: -apple-system, sans-serif; flex-shrink: 0; }
+      .stat-card {
+        background: #241b13;
+        border-radius: 16px;
+        padding: 16px 18px;
+      }
+      .stat-card .stat-label { font-size: 14px; color: #8c7d6c; margin-bottom: 8px; }
+      .stat-card .stat-value { font-size: 22px; font-weight: 700; color: #efe6da; line-height: 1.1; }
+      .stat-card .stat-value.text { font-size: 22px; }
+      .stat-card .stat-sub { font-size: 10px; color: #6f6152; margin-top: 6px; }
+      .stats-column-right .stat-card { padding: 14px 16px; border-radius: 14px; }
+      .stats-column-right .stat-card .stat-value { font-size: 22px; }
+      .stats-column-right .stat-card .stat-sub { font-size: 10px; }
+
+      .panels { width: 100%; margin-top: 20px; font-family: -apple-system, sans-serif; }
+      .card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px; padding: 12px 14px; }
+      .card.wide { margin-top: 0; }
+      .card h2 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); }
+      .call-meta { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; word-break: break-all; }
+      .call-json-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin: 8px 0 3px; }
+      .call-json { background: #0f0a05; border: 1px solid var(--panel-border); border-radius: 8px; padding: 8px; font: 11px Menlo, Monaco, monospace; color: #e8c583; max-height: 130px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin: 0; }
+      .buttons { display: flex; gap: 10px; margin-top: 12px; }
+      button { flex: 1; border: none; border-radius: 10px; padding: 12px 0; font-size: 14px; font-weight: 700; cursor: pointer; transition: transform 0.1s ease, opacity 0.2s ease; font-family: -apple-system, sans-serif; }
+      button:active { transform: scale(0.97); }
+      button:disabled { opacity: 0.35; cursor: not-allowed; }
+      #startBtn { background: linear-gradient(135deg, #e6bb5f, #b5822b); color: #241708; }
+      #endBtn { background: linear-gradient(135deg, #cf6a49, #8c3520); color: #2a0f07; }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header>
+        <h1>Jev Plays Chess</h1>
+        <div class="sub">self-play via /v1/systemone</div>
+      </header>
+      <div id="connBanner"></div>
+      <div id="resultBanner"></div>
+      <div id="status">Loading...</div>
+      <div id="moveStat" class="move-stat">Ply # —</div>
+
+      <div class="main-row">
+        <div class="stats-column stats-column-right">
+          <div class="stat-card">
+            <div class="stat-label">Side to move</div>
+            <div class="stat-value text" id="sideToMove">White</div>
+            <div class="stat-sub" id="plySub">ply #0</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Last move</div>
+            <div class="stat-value text" id="lastMove">—</div>
+            <div class="stat-sub" id="lastMoveSub">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Candidates</div>
+            <div class="stat-value" id="candidateCount">—</div>
+            <div class="stat-sub">legal moves considered</div>
+          </div>
+        </div>
+
+        <div class="board-frame">
+          <div class="board-with-ranks">
+            <div class="rank-labels" id="rankLabels"></div>
+            <div class="board" id="board"></div>
+          </div>
+          <div class="file-labels" id="fileLabels"></div>
+        </div>
+
+        <div class="stats-column">
+          <div class="stat-card">
+            <div class="stat-label">Material</div>
+            <div class="stat-value" id="materialBalance">0</div>
+            <div class="stat-sub">White − Black, pawns</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Latency</div>
+            <div class="stat-value" id="latencyBig">—</div>
+            <div class="stat-sub"></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Sharpness</div>
+            <div class="stat-value" id="sharpBig">—</div>
+            <div class="stat-sub">Jev's narration</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panels">
+        <div class="card wide">
+          <h2>Details</h2>
+          <div class="call-meta" id="callMeta">—</div>
+          <div class="call-json-label">answers.best_move</div>
+          <pre class="call-json" id="callResponse">—</pre>
+        </div>
+        <div class="buttons">
+          <button id="startBtn">Start</button>
+          <button id="endBtn" disabled>End</button>
+        </div>
+      </div>
+    </div>
+    <script>
+      const PIECE_UNICODE = {
+        wP: "♙", wN: "♘", wB: "♗", wR: "♖", wQ: "♕", wK: "♔",
+        bP: "♟", bN: "♞", bB: "♝", bR: "♜", bQ: "♛", bK: "♚",
+      };
+      const GOOD_COLOR = "#d9a544";
+      const WARN_COLOR = "#e0973f";
+      const BAD_COLOR = "#c1583a";
+
+      const boardEl = document.getElementById("board");
+      const cells = [];
+      for (let i = 0; i < 64; i++) {
+        const div = document.createElement("div");
+        div.className = "cell";
+        boardEl.appendChild(div);
+        cells.push(div);
+      }
+
+      const rankLabelsEl = document.getElementById("rankLabels");
+      for (let rank = 8; rank >= 1; rank--) {
+        const span = document.createElement("span");
+        span.textContent = rank;
+        rankLabelsEl.appendChild(span);
+      }
+      const fileLabelsEl = document.getElementById("fileLabels");
+      for (const file of "abcdefgh") {
+        const span = document.createElement("span");
+        span.textContent = file;
+        fileLabelsEl.appendChild(span);
+      }
+
+      function formatBestMove(bm) {
+        if (!bm) return "—";
+        const lines = ["{"];
+        if ("type" in bm) lines.push(`  "type": ${JSON.stringify(bm.type)},`);
+        if ("choice" in bm) lines.push(`  "choice": ${JSON.stringify(bm.choice)},`);
+        if (bm.probabilities) {
+          const probStr = Object.entries(bm.probabilities)
+            .map(([k, v]) => `"${k}": ${v}`)
+            .join(", ");
+          lines.push(`  "probabilities": { ${probStr} },`);
+        }
+        if ("confidence" in bm) lines.push(`  "confidence": ${bm.confidence}`);
+        lines.push("}");
+        return lines.join("\n");
+      }
+
+      function renderLastCall(lastCall) {
+        const metaEl = document.getElementById("callMeta");
+        const respEl = document.getElementById("callResponse");
+        if (!lastCall) {
+          metaEl.textContent = "—";
+          respEl.textContent = "—";
+          return;
+        }
+        let meta = lastCall.endpoint || "(no endpoint)";
+        if (typeof lastCall.latency_ms === "number") meta += ` · ${lastCall.latency_ms} ms`;
+        if (lastCall.error) meta += ` · error: ${lastCall.error}`;
+        metaEl.textContent = meta;
+        const bestMove = lastCall.response && lastCall.response.answers && lastCall.response.answers.best_move;
+        respEl.textContent = bestMove
+          ? formatBestMove(bestMove)
+          : lastCall.error
+          ? "(no response — request failed)"
+          : "—";
+      }
+
+      async function post(path) {
+        await fetch(path, { method: "POST" });
+      }
+
+      let connFailures = 0;
+      const connBanner = document.getElementById("connBanner");
+      const resultBanner = document.getElementById("resultBanner");
+
+      async function refresh() {
+        try {
+          const resp = await fetch("/state");
+          if (!resp.ok) throw new Error(`server returned ${resp.status}`);
+          const s = await resp.json();
+
+          connFailures = 0;
+          connBanner.style.display = "none";
+
+          document.getElementById("status").textContent = s.status || "";
+
+          (s.grid || []).forEach((sq, i) => {
+            const cell = cells[i];
+            cell.className = "cell " + (sq.light ? "light" : "dark") + (sq.highlight ? " highlight" : "");
+            if (sq.piece) {
+              cell.textContent = PIECE_UNICODE[sq.piece] || "?";
+              cell.className += sq.piece[0] === "w" ? " piece-w" : " piece-b";
+            } else {
+              cell.textContent = "";
+            }
+          });
+
+          const sideLabel = s.side_to_move
+            ? s.side_to_move[0].toUpperCase() + s.side_to_move.slice(1)
+            : "White";
+          document.getElementById("sideToMove").textContent = sideLabel;
+          document.getElementById("plySub").textContent = `ply #${s.ply_no ?? 0}`;
+          document.getElementById("lastMove").textContent = s.last_move_san || "—";
+          document.getElementById("lastMoveSub").textContent = s.last_move_san
+            ? (s.forced ? "forced — no Jev call" : "")
+            : "—";
+          document.getElementById("candidateCount").textContent = s.candidate_count ?? "—";
+
+          const materialEl = document.getElementById("materialBalance");
+          materialEl.textContent =
+            typeof s.material_balance === "number" ? (s.material_balance > 0 ? "+" : "") + s.material_balance : "0";
+
+          document.getElementById("moveStat").textContent = `Ply #${s.ply_no ?? 0}`;
+
+          const latencyEl = document.getElementById("latencyBig");
+          latencyEl.textContent = typeof s.latency_ms === "number" ? `${s.latency_ms.toFixed(0)}ms` : "—";
+
+          renderLastCall(s.last_call);
+
+          const sharpEl = document.getElementById("sharpBig");
+          if (typeof s.sharp_noul === "number") {
+            sharpEl.textContent = (s.sharp_noul * 100).toFixed(0) + "%";
+            sharpEl.style.color = s.sharp_noul > 0.66 ? BAD_COLOR : s.sharp_noul > 0.33 ? WARN_COLOR : GOOD_COLOR;
+          } else {
+            sharpEl.textContent = "—";
+            sharpEl.style.color = "#efe6da";
+          }
+
+          if (s.result) {
+            resultBanner.style.display = "block";
+            resultBanner.textContent = s.result;
+          } else {
+            resultBanner.style.display = "none";
+          }
+
+          const startBtn = document.getElementById("startBtn");
+          startBtn.textContent = (typeof s.status === "string" && s.status.startsWith("Stopped"))
+            ? "Restart"
+            : "Start";
+          document.getElementById("startBtn").disabled = !!s.running;
+          document.getElementById("endBtn").disabled = !s.running;
+        } catch (_) {
+          connFailures += 1;
+          if (connFailures >= 3) {
+            connBanner.style.display = "block";
+            connBanner.textContent =
+              "Lost connection to the Python server. Make sure jev_plays_chess.py is still " +
+              "running in your terminal, then reload this page (it should reuse the same URL).";
+            document.getElementById("startBtn").disabled = true;
+            document.getElementById("endBtn").disabled = true;
+          }
+        }
+      }
+
+      document.getElementById("startBtn").addEventListener("click", () => post("/start"));
+      document.getElementById("endBtn").addEventListener("click", () => post("/end"));
+      refresh();
+      setInterval(refresh, 1000);
+    </script>
+  </body>
+</html>
